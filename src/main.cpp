@@ -171,7 +171,7 @@ int main( int argc, char** argv )	{
     }
     ev0 = ev_min;
 
-    cout << "theta = " << theta << endl;
+    //cout << "theta = " << theta << endl;
 
     // W, theta0を更新
     for (int i=0; i<points1.size(); i++) {
@@ -197,7 +197,6 @@ int main( int argc, char** argv )	{
   cv2eigen(F, eigen_F); // convert from cv::Mat to Eigen::Matrix
 
   //特異値分解．
-  // JacobiSVD<Matrix3d> SVD(M); 何も指定しないと，特異値のみ計算
   JacobiSVD<Matrix3d> SVD(eigen_F, ComputeFullU | ComputeFullV);
 
   //特異値
@@ -244,8 +243,8 @@ int main( int argc, char** argv )	{
         min_eigen_vector_FtF[2].real();
   k << 0, 0, 1;
 
-  cout << "e1 = " << e1 << endl;
-  cout << "e2 = " << e2 << endl;
+  //cout << "e1 = " << e1 << endl;
+  //cout << "e2 = " << e2 << endl;
 
   double xi, eta;
   xi = pow((F_cor*k).norm(), 2.0) - (k.dot(F_cor*F_cor.transpose()*F_cor*k) * pow((e2.cross(k)).norm(), 2.0) / k.dot(F_cor*k));
@@ -277,7 +276,7 @@ int main( int argc, char** argv )	{
   // 最小固有値のベクトルを計算
   int index_min_ev_EEt = find_minEigenValue3(ev_EEt);
   Vector3cd  min_eigen_vector_EEt = es_EEt.eigenvectors().col(index_min_ev_EEt);
-  cout << "min_eigen_vector_EEt = " << min_eigen_vector_EEt << endl;
+  //cout << "min_eigen_vector_EEt = " << min_eigen_vector_EEt << endl;
   Vector3d t;
   for (int i=0; i<3; i++) {
     t[i] = min_eigen_vector_EEt[i].real();
@@ -298,6 +297,22 @@ int main( int argc, char** argv )	{
   }
   if (t_check_sum <= 0.0) t = -1*t;
   cout << "t = " << t << endl;
+
+  // 回転行列
+  Matrix3d t_cross;
+  t_cross = calc_CrossMatrix(t);
+  Matrix3d t_cross_E;
+  t_cross_E = -1*t_cross*E;
+  //特異値分解
+  JacobiSVD<Matrix3d> SVD2(t_cross_E, ComputeFullU | ComputeFullV);
+  Matrix3d R, Lambda, UVt;
+  UVt = SVD2.matrixU() * SVD2.matrixV().transpose();
+  Lambda << 1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, UVt.determinant();
+  R = SVD2.matrixU() * Lambda * SVD2.matrixV().transpose();
+  cout << "R = " << R << endl;
+
 
   cout << "End." << endl;
   return 0;

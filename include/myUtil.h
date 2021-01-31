@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
+#include <Eigen/LU>
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/eigen.hpp>
 
@@ -37,4 +38,12 @@ int find_minEigenValue3(Vector3cd v) {
     }
   }
   return min_index;
+}
+
+Matrix3d calc_CrossMatrix(Vector3d v) {
+  Matrix3d v_cross;
+  v_cross << 0.0, -1*v[2], v[1],
+             v[2], 0.0, -1*v[0],
+             -1*v[1], v[0], 0.0;
+  return v_cross;
 }
