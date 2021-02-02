@@ -4,7 +4,7 @@ using namespace cv;
 using namespace std;
 
 int main( int argc, char** argv )	{
-  string filename1 = "pic/pic1.jpg";
+  string filename1 = "pic/pic2.jpg";
   string filename2 = "pic/pic3.jpg";
 
   Mat img_1_big = imread(filename1, 0);
@@ -40,26 +40,30 @@ int main( int argc, char** argv )	{
   cout << "match_num = " << matches.size() << endl;
 
   // マッチングが強い(距離が短い)ものから昇順にソート
-  int point_num = 30;
+  int point_num = 100;
   sort(matches.begin(), matches.end(), [](DMatch a, DMatch b) {return a.distance < b.distance; });
   matches.resize(point_num);
 
+  // 3次元復元に使うデータ
+  vector<Point2f> points1_view, points2_view;
   for (int i=0; i<matches.size(); i++) {
-    int idx_1 = matches[i].queryIdx;
     int idx_2 = matches[i].trainIdx;
-    //cout << i << endl;
-    //cout << static_cast<int>(keypoints1[idx_1].pt.x) << ", " << static_cast<int>(keypoints1[idx_1].pt.y) << "<-->";
-    //cout << static_cast<int>(keypoints1[idx_2].pt.x) << ", " << static_cast<int>(keypoints1[idx_2].pt.y) << endl;
+    int idx_1 = matches[i].queryIdx;
+    Point2f center(center_col, center_row);
+    points1_view.push_back(keypoints1[idx_1].pt - center);
+    points2_view.push_back(keypoints2[idx_2].pt - center);
   }
 
   Mat resImg;
   drawMatches(img_1, keypoints1, img_2, keypoints2, matches, resImg);
-
   cv::imshow("image", resImg);
 	cv::waitKey();
 
+////////////////////////////////////////////////////////////////////////////////
+  // 3次元復元
+  int point_num_uesd = 30;
   vector<Point2f> points1, points2;
-  for (int i=0; i<matches.size(); i++) {
+  for (int i=0; i<point_num_uesd; i++) {
     int idx_2 = matches[i].trainIdx;
     int idx_1 = matches[i].queryIdx;
     Point2f center(center_col, center_row);
@@ -136,13 +140,16 @@ int main( int argc, char** argv )	{
     M = M/points1.size();
     L = L/points1.size();
     X = M - L;
+    cout << "[DEBUG] M = " << M << endl;
+    cout << "[DEBUG] L = " << L << endl;
+    cout << "[DEBUG] X = " << X << endl;
 
     // 固有値分解
     Matrix<double, 9, 9> eigen_X; // Eigen
     cv2eigen(X, eigen_X); // convert from cv::Mat to Eigen::Matrix
     EigenSolver<Matrix<double, 9, 9>> es(eigen_X);
     if (es.info() != Success) abort();
-    //cout << "eigen values = \n"<< es.eigenvalues() << endl;
+    cout << "[DEBUG] eigen values = \n"<< es.eigenvalues() << endl;
     VectorXcd evs = es.eigenvalues();
 
     // 最小固有値を探す
@@ -156,7 +163,7 @@ int main( int argc, char** argv )	{
     }
 
     // 最小固有値のベクトルをthetaに代入
-    //cout << "eigen vectors = \n"<< es.eigenvectors() << endl;
+    cout << "[DEBUG] eigen vectors = \n"<< es.eigenvectors() << endl;
     VectorXcd  min_eigen_vector = es.eigenvectors().col(min_index);
     for (int i=0; i<9; i++) {
       theta.at<double>(i,0) = min_eigen_vector[i].real();
@@ -171,12 +178,14 @@ int main( int argc, char** argv )	{
     }
     ev0 = ev_min;
 
-    //cout << "theta = " << theta << endl;
+    cout << "[DEBUG] theta = " << theta << endl;
 
     // W, theta0を更新
     for (int i=0; i<points1.size(); i++) {
       Mat thetaT_V0_theta(theta.t() * (V0s[i] * theta));
+      cout << "[DEBUG] thetaT_V0_theta.data[0] = " << thetaT_V0_theta.data[0] << endl;
       W[i] = 1.0 / thetaT_V0_theta.data[0];
+      cout << "[DEBUG] W[i] = " << W[i] << endl;
     }
     theta0 = theta.clone();
 
@@ -313,6 +322,63 @@ int main( int argc, char** argv )	{
   R = SVD2.matrixU() * Lambda * SVD2.matrixV().transpose();
   cout << "R = " << R << endl;
 
+  // カメラ行列
+  Matrix3d f2f0;
+  Matrix<double, 3, 4> P1, P2;
+  P1 << f1, 0, 0, 0,
+        0, f1, 0, 0,
+        0, 0, f0, 0;
+  f2f0 << f2, 0, 0,
+          0, f2, 0,
+          0, 0, f0;
+  for (int i=0; i<3; i++) {
+    for (int j=0; j<3; j++) {
+      Matrix3d Rt = R.transpose();
+      P2(i, j) = Rt(i, j);
+    }
+    Vector3d Rt_t = -1*R.transpose()*t;
+    P2(i, 3) = Rt_t(i);
+  }
+  P2 = f2f0 * P2;
+  cout << "P1 = " << P1 << endl;
+  cout << "P2 = " << P2 << endl;
+
+  // 三角測量
+  vector<Vector3d> Xs;
+  for (int i=0; i<points1_view.size(); i++) {
+    Matrix<double, 4, 3> T;
+    Vector4d p;
+    T << f0*P1(0, 0)-points1_view[i].x*P1(2, 0), f0*P1(0, 1)-points1_view[i].x*P1(2, 1), f0*P1(0, 2)-points1_view[i].x*P1(2, 2),
+         f0*P1(1, 0)-points1_view[i].y*P1(2, 0), f0*P1(1, 1)-points1_view[i].y*P1(2, 1), f0*P1(1, 2)-points1_view[i].y*P1(2, 2),
+         f0*P2(0, 0)-points2_view[i].x*P2(2, 0), f0*P2(0, 1)-points2_view[i].x*P2(2, 1), f0*P2(0, 2)-points2_view[i].x*P2(2, 2),
+         f0*P2(1, 0)-points2_view[i].y*P2(2, 0), f0*P2(1, 1)-points2_view[i].y*P2(2, 1), f0*P2(1, 2)-points2_view[i].y*P2(2, 2);
+    p << f0*P1(0, 3)-points1_view[i].x*P1(2, 3),
+         f0*P1(1, 3)-points1_view[i].y*P1(2, 3),
+         f0*P2(0, 3)-points2_view[i].x*P2(2, 3),
+         f0*P2(1, 3)-points2_view[i].y*P2(2, 3);
+
+    Matrix3d TtT;
+    Vector3d Ttp;
+    TtT = T.transpose()*T;
+    Ttp = -1*T.transpose()*p;
+
+    // LU分解を使った連立方程式の解
+    Vector3d X;
+    FullPivLU<Matrix3d> lu(TtT);
+    X = lu.solve(Ttp);
+    Xs.push_back(X);
+    cout << "X = " << X << endl;
+  }
+
+  FILE *gp;
+  gp = popen("gnuplot -persist","w");
+  fprintf(gp, "set xlabel \"X axis\"\n");
+  fprintf(gp, "set ylabel \"Z axis\"\n");
+  fprintf(gp, "plot '-' with points pointsize 2\n");
+  for (int i=0; i<Xs.size(); i++) {
+    fprintf(gp,"%f\t%f\n", Xs[i](0), Xs[i](2));
+  }
+  pclose(gp);
 
   cout << "End." << endl;
   return 0;
