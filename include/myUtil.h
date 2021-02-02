@@ -10,6 +10,7 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
 #include <Eigen/LU>
+#include<Eigen/StdVector>
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/eigen.hpp>
 
@@ -46,4 +47,12 @@ Matrix3d calc_CrossMatrix(Vector3d v) {
              v[2], 0.0, -1*v[0],
              -1*v[1], v[0], 0.0;
   return v_cross;
+}
+
+void set_zeroMatrix9d(Matrix<double, 9, 9> &M) {
+  for (int i=0; i<9; i++) {
+    for (int j=0;j<9; j++) {
+      M(i, j) = 0.0;
+    }
+  }
 }
